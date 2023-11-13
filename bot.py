@@ -7,7 +7,8 @@ import threading
 from telegram import __version__ as TG_VER
 from pytz import timezone
 import talib
-import asyncio
+from talib import BBANDS
+import decimal
 
 try:
     from telegram import __version_info__
@@ -24,11 +25,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
 # Define key
-TOKEN = "6643863300:AAF2OhcI9g70Q4boORLB_XHdBxE9NnFsNwI"  # main bot
-# TOKEN = "6354829182:AAFolT8YCQz0ddA2Im642Sf5fgHHSi9X-PM" # test bot
+TOKEN = "6445050105:AAGaFyxd5d0Mp-_kUfQOhAg7ZFhnQv53IXU"  # bot ma scalp
 BASE_URL = "https://contract.mexc.com/api/v1"
-CHAT_ID = "-1001883104059"
-# CHAT_ID = "-1001774272531"  # test group
+INTERVAL = "1h"
+CHAT_ID = "-1001883104059"  # nhóm rsi phân kỳ
+# CHAT_ID = "-1001862379259"  # test group
 
 # Define main code
 
@@ -70,31 +71,52 @@ def get_symbol_data(symbol, interval="Min15"):
         return None
 
 
+# NOTE: Cao hơn 10% so với MA 20
+def check_confirm_volume(df, threshold=1.1):
+    latest_volume = df["vol"].iloc[-2]
+    ma_20_vol = talib.MA(df["vol"].values, timeperiod=20)
+    if latest_volume > (ma_20_vol[-2] * threshold):
+        return True
+    else:
+        return False
+
+
 def find_latest_rsi_bullish_divergence(df, threshold=25, lookback_period=20):
     period = 14  # RSI period
     df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
     df["RSI"] = df["RSI"].round(2)
     bullish_divergence_detected = False
-    latest_close = df["close"].iloc[-2]
-    latest_rsi = df["RSI"].iloc[-2]
+    checkpoint_close = df["close"].iloc[-3]
+    checkpoint_rsi = df["RSI"].iloc[-3]
+    second_last_close = df["close"].iloc[-2]
+    second_last_open = df["open"].iloc[-2]
     detected_index = None
+    confirm_vol = check_confirm_volume(df)
 
-    if latest_rsi <= threshold:
+    if checkpoint_rsi <= threshold:
         # Find RSI value 20 bars ago
         if len(df) >= lookback_period:
-            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 1 :]
-            close_20_bars_ago = df["close"].iloc[-lookback_period - 1 :]
+            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -2]
+            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -2]
         else:
             rsi_20_bars_ago = df["RSI"].iloc[0]
             close_20_bars_ago = df["close"].iloc[0]
 
         for i in range(len(rsi_20_bars_ago) - 1, 1, -1):
-            if latest_close < close_20_bars_ago.iloc[i]:
-                if latest_rsi > rsi_20_bars_ago.iloc[i]:
+            if checkpoint_close < close_20_bars_ago.iloc[i]:
+                if checkpoint_rsi > rsi_20_bars_ago.iloc[i]:
                     bullish_divergence_detected = True
                     detected_index = i
                     break
-    return bullish_divergence_detected
+
+    if (
+        (second_last_close > second_last_open)
+        and confirm_vol
+        and bullish_divergence_detected
+    ):
+        return True
+
+    return False
 
 
 def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
@@ -102,27 +124,63 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
     df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
     df["RSI"] = df["RSI"].round(2)
     bearish_divergence_detected = False
-    latest_close = df["close"].iloc[-2]
-    latest_rsi = df["RSI"].iloc[-2]
+    checkpoint_close = df["close"].iloc[-3]
+    checkpoint_rsi = df["RSI"].iloc[-3]
+    second_last_close = df["close"].iloc[-2]
+    second_last_open = df["open"].iloc[-2]
     detected_index = None
+    confirm_vol = check_confirm_volume(df)
 
-    if latest_rsi >= threshold:
+    if checkpoint_rsi >= threshold:
         # Find RSI value 20 bars ago
         if len(df) >= lookback_period:
-            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 1 :]
-            close_20_bars_ago = df["close"].iloc[-lookback_period - 1 :]
+            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -2]
+            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -2]
         else:
             rsi_20_bars_ago = df["RSI"].iloc[0]
             close_20_bars_ago = df["close"].iloc[0]
 
         for i in range(len(rsi_20_bars_ago) - 1, 1, -1):
-            if latest_close > close_20_bars_ago.iloc[i]:
-                if latest_rsi < rsi_20_bars_ago.iloc[i]:
+            if checkpoint_close > close_20_bars_ago.iloc[i]:
+                if checkpoint_rsi < rsi_20_bars_ago.iloc[i]:
                     bearish_divergence_detected = True
                     detected_index = i
                     break
 
-    return bearish_divergence_detected
+    if (
+        (second_last_close < second_last_open)
+        and confirm_vol
+        and bearish_divergence_detected
+    ):
+        return True
+    return False
+
+
+def et_sl_tp(df, option="long"):
+    d = abs(decimal.Decimal(str(df["close"].iloc[-1])).as_tuple().exponent)
+    if option == "short":
+        stop_loss = df["high"].iloc[-2]
+        entry = df["close"].iloc[-2]
+        upperband, middleband, lowerband = BBANDS(
+            df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
+        )
+        # tp_1 = round(middleband.iloc[-1], d)
+        # tp_2 = round(lowerband.iloc[-1], d)
+        tp_1 = round(entry - (entry * 0.015), d)
+        tp_2 = round(entry - (entry * 0.03), d)
+        return entry, stop_loss, tp_1, tp_2
+    elif option == "long":
+        stop_loss = df["low"].iloc[-2]
+        entry = df["close"].iloc[-2]
+        upperband, middleband, lowerband = BBANDS(
+            df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
+        )
+        # tp_1 = round(middleband.iloc[-1], d)
+        # tp_2 = round(upperband.iloc[-1], d)
+        tp_1 = round(entry + (entry * 0.015), d)
+        tp_2 = round(entry + (entry * 0.03), d)
+
+        return entry, stop_loss, tp_1, tp_2
 
 
 async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
@@ -136,28 +194,24 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             df_m15 = get_symbol_data(symbol)
             df_m5 = get_symbol_data(symbol, interval="Min5")
 
-            bearish_divergence = find_latest_rsi_bearish_divergence(
-                df_m15
-            ) and find_latest_rsi_bearish_divergence(df_m5)
-            bullish_divergence = find_latest_rsi_bullish_divergence(
-                df_m15
-            ) and find_latest_rsi_bullish_divergence(df_m5)
+            bearish_divergence = find_latest_rsi_bearish_divergence(df_m15)
+            bullish_divergence = find_latest_rsi_bullish_divergence(df_m15)
 
             if bearish_divergence:
                 flag_bearish = False
-                message = (
-                    f"🔴 Tín hiệu short cho {symbol} \n RSI phân kỳ giảm trên M5 và M15"
-                )
+                et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
+                message = f"🔴 Tín hiệu short cho {symbol} \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: {et} \n\n 💀SL: {sl} \n\n ✨TP1: {tp_1} (1,5%) \n ✨TP2: {tp_2} (3%) \n ✨TP3: Tùy mồm"
                 await context.bot.send_message(CHAT_ID, text=message)
 
             if bullish_divergence:
                 flag_bullish = False
-                message = (
-                    f"🟢 Tín hiệu long cho {symbol} \n RSI phân kỳ tăng trên M5 và M15"
-                )
+                et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
+                message = f"🟢 Tín hiệu long cho {symbol} \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: {et} \n\n 💀SL: {sl} \n\n ✨TP1: {tp_1} (1,5%) \n ✨TP2: {tp_2} (3%) \n ✨TP3: Tùy mồm"
                 await context.bot.send_message(CHAT_ID, text=message)
     except Exception as e:
-        print(e)
+        print(f"Error: {e} at {symbol}")
+        message = f"Error: {e} at {symbol}"
+        # await context.bot.send_message(CHAT_ID, text=message)
 
     # if flag_bullish and flag_bearish:
     #     message = f"Không có tín hiệu nào được tìm thấy!"
@@ -166,8 +220,8 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
 
 async def start_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("Starting bot...")
-    # chat_id = update.effective_message.chat_id
-    chat_id = CHAT_ID
+    chat_id = update.effective_message.chat_id
+    # chat_id = CHAT_ID
     try:
         job_removed = remove_job_if_exists(str(chat_id), context)
         if job_removed:
@@ -184,7 +238,7 @@ async def start_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name=str(chat_id),
         )
 
-        text = "Checking conditions every 15 minutes..."
+        text = "Checking conditions every hour..."
         await update.effective_message.reply_text(
             f"{text} Time to wait: {time_to_wait} seconds"
         )
