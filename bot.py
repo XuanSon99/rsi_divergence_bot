@@ -158,11 +158,16 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
     return False
 
 
+def cal_percent(entry, sl):
+    return abs(round((entry - sl) / entry * 100, 2))
+
+
 def et_sl_tp(df, option="long"):
     d = abs(decimal.Decimal(str(df["close"].iloc[-1])).as_tuple().exponent)
     if option == "short":
         stop_loss = round(df["high"].iloc[-2] * 1.01, d)
         entry = df["close"].iloc[-2]
+        loss_percent = cal_percent(entry, stop_loss)
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
         )
@@ -170,10 +175,11 @@ def et_sl_tp(df, option="long"):
         # tp_2 = round(lowerband.iloc[-1], d)
         tp_1 = round(entry - (entry * 0.015), d)
         tp_2 = round(entry - (entry * 0.03), d)
-        return entry, stop_loss, tp_1, tp_2
+        return entry, stop_loss, loss_percent, tp_1, tp_2
     elif option == "long":
-        stop_loss = round(df["low"].iloc[-2] * 1.01, d)
+        stop_loss = round(df["low"].iloc[-2] - (df["low"].iloc[-2] * 0.01), d)
         entry = df["close"].iloc[-2]
+        loss_percent = cal_percent(entry, stop_loss)
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
         )
@@ -182,7 +188,7 @@ def et_sl_tp(df, option="long"):
         tp_1 = round(entry + (entry * 0.015), d)
         tp_2 = round(entry + (entry * 0.03), d)
 
-        return entry, stop_loss, tp_1, tp_2
+        return entry, stop_loss, loss_percent, tp_1, tp_2
 
 
 async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
@@ -203,18 +209,18 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
 
             if bearish_divergence:
                 flag_bearish = False
-                et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
-                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
-                message = message.replace("_", "\\_")
+                et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
+                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
                 )
 
             if bullish_divergence:
                 flag_bullish = False
-                et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
-                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
-                message = message.replace("_", "\\_")
+                et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
+                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
                 )
