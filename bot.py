@@ -9,6 +9,7 @@ from pytz import timezone
 import talib
 from talib import BBANDS
 import decimal
+from telegram.constants import ParseMode
 
 try:
     from telegram import __version_info__
@@ -26,6 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQuer
 
 # Define key
 TOKEN = "6445050105:AAGaFyxd5d0Mp-_kUfQOhAg7ZFhnQv53IXU"  # bot ma scalp
+# TOKEN = "6643863300:AAF2OhcI9g70Q4boORLB_XHdBxE9NnFsNwI"  # mailisa bot
 BASE_URL = "https://contract.mexc.com/api/v1"
 INTERVAL = "1h"
 CHAT_ID = "-1001883104059"  # nhóm rsi phân kỳ
@@ -159,7 +161,7 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
 def et_sl_tp(df, option="long"):
     d = abs(decimal.Decimal(str(df["close"].iloc[-1])).as_tuple().exponent)
     if option == "short":
-        stop_loss = df["high"].iloc[-2]
+        stop_loss = round(df["high"].iloc[-2] * 1.01, d)
         entry = df["close"].iloc[-2]
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
@@ -170,7 +172,7 @@ def et_sl_tp(df, option="long"):
         tp_2 = round(entry - (entry * 0.03), d)
         return entry, stop_loss, tp_1, tp_2
     elif option == "long":
-        stop_loss = df["low"].iloc[-2]
+        stop_loss = round(df["low"].iloc[-2] * 1.01, d)
         entry = df["close"].iloc[-2]
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
@@ -188,8 +190,10 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     flag_bullish = True
     flag_bearish = True
+    note = "\n\n_ __ LƯU Ý __: TP chỉ là tham khảo nếu có lời rồi thì chủ động, còn muốn gồng to thì phải xem chart và stl dương để an toàn\!\ _"
     try:
         tokens_to_check = get_all_future_pairs()
+        # tokens_to_check = ["BTC_USDT"]
         for symbol in tokens_to_check:
             df_m15 = get_symbol_data(symbol)
             df_m5 = get_symbol_data(symbol, interval="Min5")
@@ -200,14 +204,20 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             if bearish_divergence:
                 flag_bearish = False
                 et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
-                message = f"🔴 Tín hiệu short cho {symbol} \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: {et} \n\n 💀SL: {sl} \n\n ✨TP1: {tp_1} (1,5%) \n ✨TP2: {tp_2} (3%) \n ✨TP3: Tùy mồm"
-                await context.bot.send_message(CHAT_ID, text=message)
+                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = message.replace("_", "\\_")
+                await context.bot.send_message(
+                    CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                )
 
             if bullish_divergence:
                 flag_bullish = False
                 et, sl, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
-                message = f"🟢 Tín hiệu long cho {symbol} \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: {et} \n\n 💀SL: {sl} \n\n ✨TP1: {tp_1} (1,5%) \n ✨TP2: {tp_2} (3%) \n ✨TP3: Tùy mồm"
-                await context.bot.send_message(CHAT_ID, text=message)
+                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = message.replace("_", "\\_")
+                await context.bot.send_message(
+                    CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                )
     except Exception as e:
         print(f"Error: {e} at {symbol}")
         message = f"Error: {e} at {symbol}"
