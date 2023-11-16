@@ -75,9 +75,9 @@ def get_symbol_data(symbol, interval="Min15"):
 
 # NOTE: Cao hơn 10% so với MA 20
 def check_confirm_volume(df, threshold=1.1):
-    latest_volume = df["vol"].iloc[-2]
+    latest_volume = df["vol"].iloc[-1]
     ma_20_vol = talib.MA(df["vol"].values, timeperiod=20)
-    if latest_volume > (ma_20_vol[-2] * threshold):
+    if latest_volume > (ma_20_vol[-1] * threshold):
         return True
     else:
         return False
@@ -88,18 +88,18 @@ def find_latest_rsi_bullish_divergence(df, threshold=25, lookback_period=20):
     df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
     df["RSI"] = df["RSI"].round(2)
     bullish_divergence_detected = False
-    checkpoint_close = df["close"].iloc[-3]
-    checkpoint_rsi = df["RSI"].iloc[-3]
-    second_last_close = df["close"].iloc[-2]
-    second_last_open = df["open"].iloc[-2]
+    checkpoint_close = df["close"].iloc[-2]
+    checkpoint_rsi = df["RSI"].iloc[-2]
+    second_last_close = df["close"].iloc[-1]
+    second_last_open = df["open"].iloc[-1]
     detected_index = None
     confirm_vol = check_confirm_volume(df)
 
     if checkpoint_rsi <= threshold:
         # Find RSI value 20 bars ago
         if len(df) >= lookback_period:
-            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -2]
-            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -2]
+            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -1]
+            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -1]
         else:
             rsi_20_bars_ago = df["RSI"].iloc[0]
             close_20_bars_ago = df["close"].iloc[0]
@@ -126,18 +126,18 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
     df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
     df["RSI"] = df["RSI"].round(2)
     bearish_divergence_detected = False
-    checkpoint_close = df["close"].iloc[-3]
-    checkpoint_rsi = df["RSI"].iloc[-3]
-    second_last_close = df["close"].iloc[-2]
-    second_last_open = df["open"].iloc[-2]
+    checkpoint_close = df["close"].iloc[-2]
+    checkpoint_rsi = df["RSI"].iloc[-2]
+    second_last_close = df["close"].iloc[-1]
+    second_last_open = df["open"].iloc[-1]
     detected_index = None
     confirm_vol = check_confirm_volume(df)
 
     if checkpoint_rsi >= threshold:
         # Find RSI value 20 bars ago
         if len(df) >= lookback_period:
-            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -2]
-            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -2]
+            rsi_20_bars_ago = df["RSI"].iloc[-lookback_period - 2 : -1]
+            close_20_bars_ago = df["close"].iloc[-lookback_period - 2 : -1]
         else:
             rsi_20_bars_ago = df["RSI"].iloc[0]
             close_20_bars_ago = df["close"].iloc[0]
@@ -165,8 +165,8 @@ def cal_percent(entry, sl):
 def et_sl_tp(df, option="long"):
     d = abs(decimal.Decimal(str(df["close"].iloc[-1])).as_tuple().exponent)
     if option == "short":
-        stop_loss = round(df["high"].iloc[-2] * 1.01, d)
-        entry = df["close"].iloc[-2]
+        stop_loss = round(df["high"].iloc[-1] * 1.01, d)
+        entry = df["close"].iloc[-1]
         loss_percent = cal_percent(entry, stop_loss)
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
@@ -177,8 +177,8 @@ def et_sl_tp(df, option="long"):
         tp_2 = round(entry - (entry * 0.03), d)
         return entry, stop_loss, loss_percent, tp_1, tp_2
     elif option == "long":
-        stop_loss = round(df["low"].iloc[-2] - (df["low"].iloc[-2] * 0.01), d)
-        entry = df["close"].iloc[-2]
+        stop_loss = round(df["low"].iloc[-1] - (df["low"].iloc[-1] * 0.01), d)
+        entry = df["close"].iloc[-1]
         loss_percent = cal_percent(entry, stop_loss)
         upperband, middleband, lowerband = BBANDS(
             df["close"], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0
@@ -196,7 +196,7 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
     flag_bullish = True
     flag_bearish = True
-    note = "\n\n_ __ LƯU Ý __: TP chỉ là tham khảo nếu có lời rồi thì chủ động, còn muốn gồng to thì phải xem chart và stl dương để an toàn\!\ _"
+    note = "\n\n⚠⚠⚠\n_ __ LƯU Ý __:\n \-\ TP chỉ là tham khảo nếu có lời rồi thì chủ động, còn muốn gồng to thì phải xem chart và stl dương để an toàn\!\ \n \-\ Có thể vào hoặc không vào nếu thấy chart không đẹp hoặc xu hướng không ủng hộ _"
     try:
         tokens_to_check = get_all_future_pairs()
         # tokens_to_check = ["BTC_USDT"]
@@ -210,7 +210,7 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             if bearish_divergence:
                 flag_bearish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
-                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
                 message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
@@ -219,7 +219,7 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             if bullish_divergence:
                 flag_bullish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
-                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry: `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
                 message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
@@ -243,12 +243,12 @@ async def start_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if job_removed:
             text = "Previous checking is stopped!"
             await update.effective_message.reply_text(text)
-        time_to_wait = time_to_next_15_minutes()
+        time_to_wait = time_to_next_custom_minutes()
         if time_to_wait < 0:
             time_to_wait += 3600
         context.job_queue.run_repeating(
             check_conditions_and_send_message,
-            interval=900,
+            interval=900,  # 15 minutes
             first=time_to_wait,
             chat_id=chat_id,
             name=str(chat_id),
@@ -270,6 +270,24 @@ def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
     for job in current_jobs:
         job.schedule_removal()
     return True
+
+
+def time_to_next_custom_minutes(current_time=None, minutes=[12, 27, 42, 57]):
+    if current_time is None:
+        current_time = datetime.datetime.now()
+
+    # Find the next occurrence of the specified minutes
+    next_occurrence = min(
+        (m for m in minutes if m > current_time.minute), default=minutes[0]
+    )
+    next_time = current_time.replace(second=0, microsecond=0, minute=next_occurrence)
+
+    # If the next time is in the past, move to the next hour
+    if current_time >= next_time:
+        next_time = next_time.replace(hour=current_time.hour + 1, minute=minutes[0])
+
+    time_to_wait = (next_time - current_time).total_seconds()
+    return round(time_to_wait)
 
 
 def time_to_next_15_minutes(current_time=None):
@@ -300,7 +318,7 @@ async def stop_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends explanation on how to use the bot."""
     await update.message.reply_text(
-        "Hi! Use /start_checking to start checking conditions every 15 minute."
+        "Hi! Use /start_checking to start checking conditions every 12 minute."
     )
 
 
