@@ -210,7 +210,7 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             if bearish_divergence:
                 flag_bearish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
-                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
                 message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
@@ -219,7 +219,7 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
             if bullish_divergence:
                 flag_bullish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
-                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP1: `{tp_1}` \(1,5%\) \n ✨TP2: `{tp_2}` \(3%\) \n ✨TP3: Tùy mồm"
+                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
                 message = message.replace("_", "\\_").replace(".", "\\.")
                 await context.bot.send_message(
                     CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
