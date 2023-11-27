@@ -28,11 +28,14 @@ from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQuer
 # Define key
 TOKEN = "6445050105:AAGaFyxd5d0Mp-_kUfQOhAg7ZFhnQv53IXU"  # bot ma scalp
 # TOKEN = "6643863300:AAF2OhcI9g70Q4boORLB_XHdBxE9NnFsNwI"  # mailisa bot
+# TOKEN = "6649758324:AAGNvtZ6e4CTaEPwACa9o3IzUcXzmN7zZz0"  # test bot
 BASE_URL = "https://contract.mexc.com/api/v1"
-INTERVAL = "1h"
+INTERVAL = "Min60"
 CHAT_ID = "-1001883104059"  # nhóm rsi phân kỳ
 # CHAT_ID = "-1001862379259"  # test group
-
+# CHAT_ID = "-1002127588410"  # nhóm private
+MINUTES = [50]
+TRACKING_INTERVAL = 3600
 # Define main code
 
 
@@ -71,6 +74,10 @@ def get_symbol_data(symbol, interval="Min15"):
     else:
         print("Error: Data retrieval unsuccessful.")
         return None
+
+
+def cal_percent(entry, sl):
+    return abs(round((entry - sl) / entry * 100, 2))
 
 
 # NOTE: Cao hơn 10% so với MA 20
@@ -158,8 +165,85 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
     return False
 
 
-def cal_percent(entry, sl):
-    return abs(round((entry - sl) / entry * 100, 2))
+def find_signal_rsi(df, type="bullish", lookback_period=20):
+    period = 14  # RSI period
+    df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
+    df["RSI"] = df["RSI"].round(2)
+    lasted_close = df["close"].iloc[-1]
+    lasted_open = df["open"].iloc[-1]
+    checkpoint_rsi = df["RSI"].iloc[-1]
+    confirm_vol = check_confirm_volume(df)
+
+    if type == "bullish":
+        if checkpoint_rsi <= 25 and confirm_vol and lasted_close > lasted_open * 1.005:
+            return True
+
+    elif type == "bearish":
+        if checkpoint_rsi >= 75 and confirm_vol and lasted_close < lasted_open * 0.995:
+            return True
+
+    return False
+
+
+def find_signal_ema(df, type="bullish"):
+    df["EMA34"] = talib.EMA(df["close"].values, timeperiod=34)
+    df["EMA34"] = df["EMA34"].round(2)
+
+    df["EMA89"] = talib.EMA(df["close"].values, timeperiod=89)
+    df["EMA89"] = df["EMA89"].round(2)
+
+    df["EMA200"] = talib.EMA(df["close"].values, timeperiod=200)
+    df["EMA200"] = df["EMA200"].round(2)
+
+    lasted_close = df["close"].iloc[-1]  # giá hiện tại
+    lasted_low = df["low"].iloc[-1]  # giá thấp nhất
+    lasted_high = df["high"].iloc[-1]  # giá cao nhất
+
+    checkpoint_ema89 = df["EMA89"].iloc[-1]  # giá EMA89 hiện tại
+    checkpoint_ema200 = df["EMA200"].iloc[-1]  # giá EMA200 hiện tại
+    checkpoint_ema34 = df["EMA34"].iloc[-1]  # giá EMA34 hiện tại
+
+    list_ema = [34, 89, 200]
+
+    for ema in list_ema:
+        if ema == 34:
+            checkpoint_ema = checkpoint_ema34
+
+        elif ema == 89:
+            checkpoint_ema = checkpoint_ema89
+
+        elif ema == 200:
+            checkpoint_ema = checkpoint_ema200
+
+        confirm_vol = check_confirm_volume(df)
+
+        if type == "bullish":
+            if (
+                lasted_close
+                > checkpoint_ema
+                # and lasted_close > checkpoint_ema89
+                # and lasted_close > checkpoint_ema200
+            ):
+                if lasted_low > checkpoint_ema:
+                    if cal_percent(lasted_low, checkpoint_ema) <= 0.05:
+                        return True, ema
+                else:
+                    return True, ema
+        elif type == "bearish":
+            if (
+                lasted_close
+                < checkpoint_ema
+                # and lasted_close < checkpoint_ema89
+                # and lasted_close < checkpoint_ema200
+                # giá cao nhất cách EMA34 không quá 0.05%
+            ):
+                if lasted_high < checkpoint_ema:
+                    if cal_percent(lasted_high, checkpoint_ema) <= 0.05:
+                        return True, ema
+                else:
+                    return True, ema
+
+    return False, 1
 
 
 def et_sl_tp(df, option="long"):
@@ -201,29 +285,76 @@ async def check_conditions_and_send_message(context: ContextTypes.DEFAULT_TYPE):
         tokens_to_check = get_all_future_pairs()
         # tokens_to_check = ["BTC_USDT"]
         for symbol in tokens_to_check:
-            df_m15 = get_symbol_data(symbol)
-            df_m5 = get_symbol_data(symbol, interval="Min5")
+            df_m15 = get_symbol_data(symbol, interval=INTERVAL)
+            # df_m5 = get_symbol_data(symbol, interval="Min5")
 
+            # !NOTE: RSI DIVERGENCE
             bearish_divergence = find_latest_rsi_bearish_divergence(df_m15)
             bullish_divergence = find_latest_rsi_bullish_divergence(df_m15)
+
+            # !NOTE: Confirm Volume when RSI < 25 or RSI > 75
+            signal_bullish_rsi = find_signal_rsi(df_m15, type="bullish")
+            signal_bearish_rsi = find_signal_rsi(df_m15, type="bearish")
+
+            # !NOTE: Price test trend line EMA 34, 89, 200
+            # signal_bullish_ema, ema_long = find_signal_ema(df_m15, type="bullish")
+            # signal_bearish_ema, ema_short = find_signal_ema(df_m15, type="bearish")
 
             if bearish_divergence:
                 flag_bearish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
-                message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
-                message = message.replace("_", "\\_").replace(".", "\\.")
-                await context.bot.send_message(
-                    CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
-                )
+                if lp < 5:
+                    message = f"🔴 Tín hiệu short cho *{symbol}* \n RSI phân kỳ giảm trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+                    message = message.replace("_", "\\_").replace(".", "\\.")
+                    await context.bot.send_message(
+                        CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                    )
 
-            if bullish_divergence:
+            elif bullish_divergence:
                 flag_bullish = False
                 et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
-                message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung M15 \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL: `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
-                message = message.replace("_", "\\_").replace(".", "\\.")
-                await context.bot.send_message(
-                    CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
-                )
+                if lp < 5:
+                    message = f"🟢 Tín hiệu long cho *{symbol}* \n RSI phân kỳ giảm trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+                    message = message.replace("_", "\\_").replace(".", "\\.")
+                    await context.bot.send_message(
+                        CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                    )
+            elif signal_bullish_rsi:
+                flag_bullish = False
+                et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
+                if lp < 5:
+                    message = f"🟢 Tín hiệu long cho *{symbol}* \n Có Volume mua mạnh khi RSI dưới 25 trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+                    message = message.replace("_", "\\_").replace(".", "\\.")
+                    await context.bot.send_message(
+                        CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                    )
+            elif signal_bearish_rsi:
+                flag_bearish = False
+                et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
+                if lp < 5:
+                    message = f"🔴 Tín hiệu short cho *{symbol}* \n Có Volume bán mạnh RSI trên 75 trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+                    message = message.replace("_", "\\_").replace(".", "\\.")
+                    await context.bot.send_message(
+                        CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+                    )
+            # elif signal_bullish_ema:
+            #     flag_bullish = False
+            #     et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="long")
+            #     if lp < 5:
+            #         message = f"🟢 Tín hiệu long cho *{symbol}* \n Giá đang test EMA{ema_long} trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+            #         message = message.replace("_", "\\_").replace(".", "\\.")
+            #         await context.bot.send_message(
+            #             CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+            #         )
+            # elif signal_bearish_ema:
+            #     flag_bearish = False
+            #     et, sl, lp, tp_1, tp_2 = et_sl_tp(df_m15, option="short")
+            #     if lp < 5:
+            #         message = f"🔴 Tín hiệu short cho *{symbol}* \n Giá đang test EMA{ema_short} trên khung {INTERVAL} \n\n 🐳Entry *tham khảo:* `{et}` \n\n 💀SL khi có bất kì cây nến nào *đóng qua:* `{sl}` \({lp}%\) \n\n ✨TP: Tùy mồm"
+            #         message = message.replace("_", "\\_").replace(".", "\\.")
+            #         await context.bot.send_message(
+            #             CHAT_ID, text=message + note, parse_mode=ParseMode.MARKDOWN_V2
+            #         )
     except Exception as e:
         print(f"Error: {e} at {symbol}")
         message = f"Error: {e} at {symbol}"
@@ -243,12 +374,12 @@ async def start_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if job_removed:
             text = "Previous checking is stopped!"
             await update.effective_message.reply_text(text)
-        time_to_wait = time_to_next_custom_minutes()
+        time_to_wait = time_to_next_custom_minutes(minutes=MINUTES)
         if time_to_wait < 0:
             time_to_wait += 3600
         context.job_queue.run_repeating(
             check_conditions_and_send_message,
-            interval=900,  # 15 minutes
+            interval=TRACKING_INTERVAL,  # 60 minutes
             first=time_to_wait,
             chat_id=chat_id,
             name=str(chat_id),
@@ -258,8 +389,8 @@ async def start_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(
             f"{text} Time to wait: {time_to_wait} seconds"
         )
-    except (IndexError, ValueError):
-        await update.effective_message.reply_text("Checking failed!")
+    except Exception as e:
+        await update.effective_message.reply_text(f"Checking failed! {e}")
 
 
 def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -272,7 +403,7 @@ def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
     return True
 
 
-def time_to_next_custom_minutes(current_time=None, minutes=[12, 27, 42, 57]):
+def time_to_next_custom_minutes(current_time=None, minutes=[50]):
     if current_time is None:
         current_time = datetime.datetime.now()
 
@@ -290,21 +421,21 @@ def time_to_next_custom_minutes(current_time=None, minutes=[12, 27, 42, 57]):
     return round(time_to_wait)
 
 
-def time_to_next_15_minutes(current_time=None):
-    if current_time is None:
-        current_time = datetime.datetime.now()
+# def time_to_next_15_minutes(current_time=None):
+#     if current_time is None:
+#         current_time = datetime.datetime.now()
 
-    # Calculate the next 15-minute mark
-    next_15_minute = current_time.replace(second=0, microsecond=0) + datetime.timedelta(
-        minutes=(15 - current_time.minute % 15)
-    )
+#     # Calculate the next 15-minute mark
+#     next_15_minute = current_time.replace(second=0, microsecond=0) + datetime.timedelta(
+#         minutes=(15 - current_time.minute % 15)
+#     )
 
-    # If the current time is already past the next 15-minute mark, add 15 minutes
-    if current_time >= next_15_minute:
-        next_15_minute += datetime.timedelta(minutes=15)
+#     # If the current time is already past the next 15-minute mark, add 15 minutes
+#     if current_time >= next_15_minute:
+#         next_15_minute += datetime.timedelta(minutes=15)
 
-    time_to_wait = (next_15_minute - current_time).total_seconds()
-    return round(time_to_wait)
+#     time_to_wait = (next_15_minute - current_time).total_seconds()
+#     return round(time_to_wait)
 
 
 async def stop_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -316,10 +447,44 @@ async def stop_checking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Sends explanation on how to use the bot."""
+    """Sends a message with three inline buttons attached."""
+    keyboard = [
+        [
+            InlineKeyboardButton("M15", callback_data="15"),
+            InlineKeyboardButton("H1", callback_data="1"),
+            # InlineKeyboardButton("H4", callback_data="4"),
+        ],
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await update.message.reply_text(
-        "Hi! Use /start_checking to start checking conditions every 12 minute."
+        "Chọn khung thời gian để theo dõi", reply_markup=reply_markup
     )
+
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+    global INTERVAL
+    global MINUTES
+    global TRACKING_INTERVAL
+    await query.answer()
+    if query.data == "15":
+        INTERVAL = "Min15"
+        MINUTES = [12, 27, 42, 57]
+        TRACKING_INTERVAL = 900
+        await query.edit_message_text(text=f"Đã chọn khung theo dõi M15")
+    elif query.data == "1":
+        INTERVAL = "Min60"
+        MINUTES = [50]
+        TRACKING_INTERVAL = 3600
+        await query.edit_message_text(text=f"Đã chọn khung theo dõi H1")
+    elif query.data == "4":
+        INTERVAL = "Hour4"
+        MINUTES = [50]
+        TRACKING_INTERVAL = 14400
+        await query.edit_message_text(text=f"Đã chọn khung theo dõi H4")
 
 
 def main() -> None:
@@ -331,7 +496,7 @@ def main() -> None:
     application.add_handler(CommandHandler(["start", "help"], start))
     application.add_handler(CommandHandler("start_checking", start_checking))
     application.add_handler(CommandHandler("stop_checking", stop_checking))
-
+    application.add_handler(CallbackQueryHandler(button))
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
