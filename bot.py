@@ -165,7 +165,7 @@ def find_latest_rsi_bearish_divergence(df, threshold=75, lookback_period=20):
     return False
 
 
-def find_signal_rsi(df, type="bullish", lookback_period=20):
+def find_signal_rsi(df, type="bullish"):
     period = 14  # RSI period
     df["RSI"] = talib.RSI(df["close"].values, timeperiod=period)
     df["RSI"] = df["RSI"].round(2)
@@ -174,13 +174,22 @@ def find_signal_rsi(df, type="bullish", lookback_period=20):
     checkpoint_rsi = df["RSI"].iloc[-1]
     confirm_vol = check_confirm_volume(df)
 
-    if type == "bullish":
-        if checkpoint_rsi <= 25 and confirm_vol and lasted_close > lasted_open * 1.005:
-            return True
+    if checkpoint_rsi > 0:
+        if type == "bullish":
+            if (
+                checkpoint_rsi <= 30
+                and confirm_vol
+                and lasted_close > lasted_open * 1.01
+            ):
+                return True
 
-    elif type == "bearish":
-        if checkpoint_rsi >= 75 and confirm_vol and lasted_close < lasted_open * 0.995:
-            return True
+        elif type == "bearish":
+            if (
+                checkpoint_rsi >= 70
+                and confirm_vol
+                and lasted_close < lasted_open * 0.99
+            ):
+                return True
 
     return False
 
