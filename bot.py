@@ -26,7 +26,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
 # Define key
-TOKEN = "6445050105:AAGaFyxd5d0Mp-_kUfQOhAg7ZFhnQv53IXU"  # bot ma scalp
+TOKEN = "7813480020:AAF-tHo576_wEbXQT60kQFwtt6ZOt-EKTOI"  # bot ma scalp
 # TOKEN = "6643863300:AAF2OhcI9g70Q4boORLB_XHdBxE9NnFsNwI"  # mailisa bot
 # TOKEN = "6649758324:AAGNvtZ6e4CTaEPwACa9o3IzUcXzmN7zZz0"  # test bot
 BASE_URL = "https://contract.mexc.com/api/v1"
